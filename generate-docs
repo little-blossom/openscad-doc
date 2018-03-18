@@ -3,7 +3,6 @@
 import os
 import shutil
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
-from datetime import datetime
 
 DOC_DIR_ABS = os.path.join(os.getcwd(), "docs", "generated")
 
@@ -195,10 +194,6 @@ def render_doc(modules):
             position += 1
 
         content.append('</table>')
-
-        content.append('')
-        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        content.append('(Generated on %s)' % now)
 
         file_name = os.path.join(DOC_DIR_ABS, module) + '.md'
         with open(file_name, 'wt') as f:
