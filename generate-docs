@@ -15,11 +15,137 @@ def remove_files_from_last_run():
 def add_module(modules, file_name, name, args, doc):
     if name.startswith("test"):
         return
+    summary, description, doc_args = parse_doc(doc, file_name, name)
+
+    for doc_arg in doc_args.keys():
+        if doc_arg not in [arg['name'] for arg in args]:
+            msg = 'Documentation for non-existing parameter \'%s\'' % (doc_arg)
+            doc_warning(msg, file_name, name)
+
+    for arg in args:
+        if arg['name'] not in doc_args:
+            msg = 'No documentation for parameter \'%s\'' % (arg['name'])
+            doc_warning(msg, file_name, name)
+        arg['description'] = doc_args[arg['name']]
 
     modules[name] = {
         'source': file_name,
+        'summary': summary,
+        'description': description,
         'args': args,
         }
+
+
+def doc_warning(msg, file_name, module_name):
+    raise RuntimeError('%s -- File %s, module %s' % (
+            msg, file_name, module_name))
+
+
+def parse_block_tags(paragraph, file_name, module_name):
+    parameters = {}
+    mode = None
+    name = None
+    value = ''
+    for word in paragraph.split(' ') + [None]:
+        if word == '':
+            pass
+        elif word == '@param' or word is None:
+            if mode == '@param':
+                if name in parameters:
+                    msg = 'Parameter \'%s\' occurs more than once in doc' % (
+                        name)
+                    doc_warning(msg, file_name, module_name)
+                if not value:
+                    msg = 'Empty documentation for parameter \'%s\'' % (name)
+                    doc_warning(msg, file_name, module_name)
+                parameters[name] = value
+            elif mode is None:
+                pass
+            else:
+                msg = 'Unknown mode \'%s\'' % (word)
+                doc_warning(msg, file_name, module_name)
+            mode = word
+            name = None
+            value = ''
+        else:
+            if mode == '@param':
+                if name:
+                    if value:
+                        value += ' '
+                    value += word
+                else:
+                    name = word
+            else:
+                msg = 'Unknown mode \'%s\'' % (word)
+                doc_warning(msg, file_name, module_name)
+    return parameters
+
+
+def parse_doc(doc_lines, file_name, module_name):
+    summary = None
+    description = ''
+    parameters = {}
+
+    foundBlockTags = False
+    if doc_lines:
+        kind = None
+        paragraph = None
+        for line in doc_lines + [' *']:
+            if line == ' *':
+                if kind is None:
+                    doc_warning('Empty doc chunk', file_name, module_name)
+                elif kind == 'text':
+                    if paragraph.startswith('<p>'):
+                        paragraph = paragraph[4:]
+                    if paragraph.endswith('</p>'):
+                        paragraph = paragraph[:-4]
+
+                    if not summary:
+                        summary = paragraph
+                        if not summary.endswith('.'):
+                            msg = 'First doc paragraph does not end in \'.\''
+                            doc_warning(msg, file_name, module_name)
+
+                    if description:
+                        description += '\n'
+                    description += '\n%s\n' % (paragraph)
+                elif kind == 'block-tags':
+                    parameters = parse_block_tags(paragraph, file_name,
+                                                  module_name)
+                else:
+                    msg = 'Unknown paragraph kind \'%s\'' % (kind)
+                    doc_warning(msg, file_name, module_name)
+                kind = None
+                paragraph = None
+            else:
+                if not line.startswith(' * '):
+                    msg = 'Line \'%s\' does not start in \' * \'' % (line)
+                    doc_warning(msg, file_name, module_name)
+                line = line[3:]
+                if kind is None:
+                    if line.startswith('@param'):
+                        kind = 'block-tags'
+                        if foundBlockTags:
+                            msg = 'Line \'%s\' starts second ' + \
+                                'block-tags chunk in \' * \'' % (line)
+                            doc_warning(msg, file_name, module_name)
+                        foundBlockTags = True
+                    else:
+                        kind = 'text'
+                    paragraph = line
+                elif kind == 'text':
+                    if paragraph:
+                        paragraph += ' '
+                    paragraph += line
+                elif kind == 'block-tags':
+                    if paragraph:
+                        paragraph += ' '
+                    paragraph += line
+                else:
+                    msg = 'Unknown paragraph kind \'%s\'' % (kind)
+                    doc_warning(msg, file_name, module_name)
+
+    return summary, description, parameters
 
 
 def parse_arg_unparsed(arg_unparsed):
@@ -91,6 +217,15 @@ def parse_source_file(modules, file_name):
                 args = parse_arg_unparsed(arg_unparsed)
                 if args is not None:
                     add_module(modules, file_name, name, args, doc)
+                    resetState = True
+            else:
+                if line == '/**\n':
+                    doc = []
+                elif line == ' */\n':
+                    pass
+                elif line.startswith(' *') and doc is not None:
+                    doc.append(line[:-1])
+                else:
                     resetState = True
 
 
@@ -180,20 +315,32 @@ def render_doc(modules):
             content.append(sources)
             content.append('')
 
+        if conf['summary']:
+            content.append(conf['summary'])
+            content.append('')
+
         content.append('## Arguments')
         content.append('')
         content.append('<table>')
-        header = '<tr><th>Position</th><th>Name</th><th>Default</th></tr>'
+        header = '<tr><th>Position</th><th>Name</th><th>Default</th>' + \
+            '<th>Description</th></tr>'
         content.append(header)
         position = 1
         for arg in conf['args']:
             row_format = '<tr><td>%d</td><td><code>%s</code></td>' + \
-                '<td><code>%s</code></td></tr>'
-            row = row_format % (position, arg['name'], arg['value'])
+                '<td><code>%s</code></td><td>%s</td></tr>'
+            row = row_format % (position, arg['name'], arg['value'],
+                                arg['description'])
             content.append(row)
             position += 1
-
         content.append('</table>')
+        content.append('')
+
+        if conf['description']:
+            content.append('## Description')
+            content.append('')
+            content.append(conf['description'])
+            content.append('')
 
         file_name = os.path.join(DOC_DIR_ABS, module) + '.md'
         with open(file_name, 'wt') as f:
