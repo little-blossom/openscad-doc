@@ -1,0 +1,7 @@
+language: generic # Not 'python' as thaht would cause a virtualenv, which Travis
+# docs say might interact badly with tox.
+before_install:
+  - sudo apt-get -qq update
+  - sudo apt-get install -y python-tox
+script:
+  - tox
