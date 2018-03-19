@@ -319,10 +319,16 @@ def render_doc(modules):
             content.append(conf['summary'])
             content.append('')
 
-        content.append('* [Arguments](#arguments)')
         if conf['description']:
             content.append('* [Description](#description)')
+        content.append('* [Arguments](#arguments)')
         content.append('')
+
+        if conf['description']:
+            content.append('## Description')
+            content.append('')
+            content.append(conf['description'])
+            content.append('')
 
         content.append('## Arguments')
         content.append('')
@@ -340,12 +346,6 @@ def render_doc(modules):
             position += 1
         content.append('</table>')
         content.append('')
-
-        if conf['description']:
-            content.append('## Description')
-            content.append('')
-            content.append(conf['description'])
-            content.append('')
 
         file_name = os.path.join(DOC_DIR_ABS, module) + '.md'
         with open(file_name, 'wt') as f:
