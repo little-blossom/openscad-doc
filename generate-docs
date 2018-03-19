@@ -319,6 +319,11 @@ def render_doc(modules):
             content.append(conf['summary'])
             content.append('')
 
+        content.append('* [Arguments](#arguments)')
+        if conf['description']:
+            content.append('* [Description](#description)')
+        content.append('')
+
         content.append('## Arguments')
         content.append('')
         content.append('<table>')
