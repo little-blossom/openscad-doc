@@ -4,7 +4,48 @@ import os
 import shutil
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
-DOC_DIR_ABS = os.path.join(os.getcwd(), "docs", "generated")
+DOC_DIR_REL = os.path.join("docs", "generated")
+DOC_DIR_ABS = os.path.join(os.getcwd(), DOC_DIR_REL)
+
+
+def get_config():
+    config = SafeConfigParser()
+    config.read(["settings.conf"])
+    return config
+
+
+def get_url_bases():
+    config = get_config()
+
+    try:
+        github_user = config.get('repo', 'github_user')
+    except (NoSectionError, NoOptionError):
+        github_user = None
+
+    try:
+        github_repo = config.get('repo', 'github_repo')
+    except (NoSectionError, NoOptionError):
+        github_repo = None
+
+    try:
+        pretty_source_url_base = config.get('repo', 'pretty_source_url_format')
+    except (NoSectionError, NoOptionError):
+        if github_user and github_repo:
+            url_format = 'https://github.com/%s/%s/blob/master/%%s'
+            pretty_source_url_base = url_format % (github_user, github_repo)
+        else:
+            pretty_source_url_base = None
+
+    try:
+        raw_source_url_base = config.get('repo', 'raw_source_url_format')
+    except (NoSectionError, NoOptionError):
+        if github_user and github_repo:
+            url_format = 'https://raw.githubusercontent.com/%s/%s/master/%%s'
+            raw_source_url_base = url_format % (github_user, github_repo)
+        else:
+            raw_source_url_base = None
+
+    return (pretty_source_url_base, raw_source_url_base)
 
 
 def remove_files_from_last_run():
@@ -81,10 +122,121 @@ def parse_block_tags(paragraph, file_name, module_name):
     return parameters
 
 
+def run_command(command):
+    return os.system(command)
+
+
+def render_openscad(scad_file_abs, png_file_abs, file_name, module_name):
+    command = "openscad \
+        --render \
+        --camera=0,0,0,55,0,25,50 \
+        --imgsize=512,384 \
+        --projection=p \
+        -o \"%s\" \
+        \"%s\"" % (png_file_abs, scad_file_abs)
+    ret = run_command(command)
+    if ret == 0:
+        if os.path.isfile(png_file_abs):
+            if os.path.getsize(png_file_abs) != 0:
+                pass
+            else:
+                msg = 'Render of "%s" produced empty image' % (scad_file_abs)
+                doc_warning(msg, file_name, module_name)
+        else:
+            msg = 'Render of "%s" did not produce image' % (scad_file_abs)
+            doc_warning(msg, file_name, module_name)
+    else:
+        msg = 'Failed to render "%s" (return value: %d)' % (scad_file_abs, ret)
+        doc_warning(msg, file_name, module_name)
+
+    return
+
+
+def parse_openscad_open_tag(line, file_number):
+    file_id = None
+    line = line.strip()
+    attributes = {}
+    if line != '<openscad>':
+        raw_attribute = ''
+        for chunk in (line[:-1] + ' ').split(' ')[1:]:
+            if '=' in raw_attribute \
+                    and raw_attribute.endswith('"') \
+                    and raw_attribute.count('"') >= 2:
+                raw_key, raw_value = raw_attribute.split('=', 1)
+                raw_value_split = raw_value.split('"')
+                attributes[raw_key.strip()] = '"'.join(raw_value_split[1:-1])
+                raw_attribute = ''
+            if raw_attribute:
+                raw_attribute += " "
+            raw_attribute += chunk
+
+    file_id = attributes.get('id', 'openscad-%d' % (file_number))
+    caption = attributes.get('caption', None)
+    alt = attributes.get('alt', file_id)
+
+    return file_id, caption, alt
+
+
+def parse_openscad(lines, file_number, file_name, module_name):
+    while len(lines) >= 3 and not lines[0].strip().endswith('>'):
+        lines = [lines[0] + ' ' + lines[1]] + lines[2:]
+
+    file_id, caption, alt = parse_openscad_open_tag(lines[0], file_number)
+
+    media_dir_rel_doc = os.path.join(file_name + '-media')
+    media_dir_abs = os.path.join(DOC_DIR_ABS, media_dir_rel_doc)
+
+    scad_file_rel_doc = os.path.join(media_dir_rel_doc, file_id + '.scad')
+    scad_file_abs = os.path.join(DOC_DIR_ABS, scad_file_rel_doc)
+
+    png_file_rel_doc = os.path.join(media_dir_rel_doc, file_id + '.png')
+    png_file_abs = os.path.join(DOC_DIR_ABS, png_file_rel_doc)
+
+    if not os.path.isdir(media_dir_abs):
+        os.makedirs(media_dir_abs)
+
+    with open(scad_file_abs, 'wt') as f:
+        f.writelines('\n'.join(lines[1:-1]))
+
+    render_openscad(scad_file_abs, png_file_abs, file_name, module_name)
+
+    markup = '![%s](%s "%s")' % (file_id, png_file_rel_doc, alt)
+    if PRETTY_SOURCE_URL_BASE:
+        url = PRETTY_SOURCE_URL_BASE % os.path.join(
+            DOC_DIR_REL, png_file_rel_doc)
+        markup = '[%s](%s)' % (markup, url)
+
+    markup = '| %s |\n| :---: |\n|' % (markup)
+
+    markup += 'Example %d' % (file_number)
+    if caption:
+        markup += ': %s' % (caption)
+    markup += ' '
+
+    if PRETTY_SOURCE_URL_BASE:
+        pretty_url = PRETTY_SOURCE_URL_BASE % os.path.join(
+            DOC_DIR_REL, scad_file_rel_doc)
+    else:
+        pretty_url = scad_file_rel_doc
+    markup += '[(source)](%s)' % (pretty_url)
+
+    if RAW_SOURCE_URL_BASE:
+        raw_url = RAW_SOURCE_URL_BASE % os.path.join(
+            DOC_DIR_REL, scad_file_rel_doc)
+    else:
+        raw_url = scad_file_rel_doc
+    markup += '[(raw)](%s)' % (raw_url)
+
+    markup += '|\n'
+
+    return markup
+
+
 def parse_doc(doc_lines, file_name, module_name):
     summary = None
     description = ''
     parameters = {}
+    openscad_count = 0
 
     foundBlockTags = False
     if doc_lines:
@@ -92,6 +244,7 @@ def parse_doc(doc_lines, file_name, module_name):
         paragraph = None
         for line in doc_lines + [' *']:
             if line == ' *':
+                resetKind = True
                 if kind is None:
                     doc_warning('Empty doc chunk', file_name, module_name)
                 elif kind == 'text':
@@ -112,11 +265,22 @@ def parse_doc(doc_lines, file_name, module_name):
                 elif kind == 'block-tags':
                     parameters = parse_block_tags(paragraph, file_name,
                                                   module_name)
+                elif kind == 'openscad':
+                    if paragraph[-1].strip() == '</openscad>':
+                        openscad_count += 1
+                        markup = parse_openscad(paragraph, openscad_count,
+                                                file_name, module_name)
+                        description += '\n%s\n' % (markup)
+                    else:
+                        paragraph.append('')
+                        resetKind = False
                 else:
                     msg = 'Unknown paragraph kind \'%s\'' % (kind)
                     doc_warning(msg, file_name, module_name)
-                kind = None
-                paragraph = None
+
+                if resetKind:
+                    kind = None
+                    paragraph = None
             else:
                 if not line.startswith(' * '):
                     msg = 'Line \'%s\' does not start in \' * \'' % (line)
@@ -130,9 +294,14 @@ def parse_doc(doc_lines, file_name, module_name):
                                 'block-tags chunk in \' * \'' % (line)
                             doc_warning(msg, file_name, module_name)
                         foundBlockTags = True
+                        paragraph = line
+                    elif line.startswith('<openscad>') \
+                            or line.startswith('<openscad '):
+                        kind = 'openscad'
+                        paragraph = [line]
                     else:
                         kind = 'text'
-                    paragraph = line
+                        paragraph = line
                 elif kind == 'text':
                     if paragraph:
                         paragraph += ' '
@@ -141,6 +310,8 @@ def parse_doc(doc_lines, file_name, module_name):
                     if paragraph:
                         paragraph += ' '
                     paragraph += line
+                elif kind == 'openscad':
+                    paragraph.append(line)
                 else:
                     msg = 'Unknown paragraph kind \'%s\'' % (kind)
                     doc_warning(msg, file_name, module_name)
@@ -255,62 +426,21 @@ def parse_source_files(directory):
     return modules
 
 
-def get_config():
-    config = SafeConfigParser()
-    config.read(["settings.conf"])
-    return config
-
-
-def render_doc_get_urls():
-    config = get_config()
-
-    try:
-        github_user = config.get('repo', 'github_user')
-    except (NoSectionError, NoOptionError):
-        github_user = None
-
-    try:
-        github_repo = config.get('repo', 'github_repo')
-    except (NoSectionError, NoOptionError):
-        github_repo = None
-
-    try:
-        pretty_source_url_base = config.get('repo', 'pretty_source_url_format')
-    except (NoSectionError, NoOptionError):
-        if github_user and github_repo:
-            url_format = 'https://github.com/%s/%s/blob/master/%%s'
-            pretty_source_url_base = url_format % (github_user, github_repo)
-        else:
-            pretty_source_url_base = None
-
-    try:
-        raw_source_url_base = config.get('repo', 'raw_source_url_format')
-    except (NoSectionError, NoOptionError):
-        if github_user and github_repo:
-            url_format = 'https://raw.githubusercontent.com/%s/%s/master/%%s'
-            raw_source_url_base = url_format % (github_user, github_repo)
-        else:
-            raw_source_url_base = None
-
-    return (pretty_source_url_base, raw_source_url_base)
-
-
 def render_doc(modules):
-    pretty_source_url_base, raw_source_url_base = render_doc_get_urls()
-
-    os.makedirs(DOC_DIR_ABS)
+    if not os.path.isdir(DOC_DIR_ABS):
+        os.makedirs(DOC_DIR_ABS)
     for module, conf in modules.iteritems():
         content = []
         content.append('# %s' % (module))
         content.append('')
 
-        if pretty_source_url_base or raw_source_url_base:
+        if PRETTY_SOURCE_URL_BASE or RAW_SOURCE_URL_BASE:
             sources = 'Source:'
-            if pretty_source_url_base:
-                pretty_source_url = pretty_source_url_base % (conf['source'])
+            if PRETTY_SOURCE_URL_BASE:
+                pretty_source_url = PRETTY_SOURCE_URL_BASE % (conf['source'])
                 sources += ' [%s](%s)' % (conf['source'], pretty_source_url)
-            if raw_source_url_base:
-                raw_source_url = raw_source_url_base % (conf['source'])
+            if RAW_SOURCE_URL_BASE:
+                raw_source_url = RAW_SOURCE_URL_BASE % (conf['source'])
                 sources += ' ([raw](%s))' % (raw_source_url)
             content.append(sources)
             content.append('')
@@ -350,6 +480,9 @@ def render_doc(modules):
         file_name = os.path.join(DOC_DIR_ABS, module) + '.md'
         with open(file_name, 'wt') as f:
             f.writelines('\n'.join(content))
+
+
+PRETTY_SOURCE_URL_BASE, RAW_SOURCE_URL_BASE = get_url_bases()
 
 
 def main():
