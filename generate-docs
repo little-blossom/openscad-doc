@@ -426,6 +426,33 @@ def parse_source_files(directory):
     return modules
 
 
+def render_package_overview(modules):
+    if not os.path.isdir(DOC_DIR_ABS):
+        os.makedirs(DOC_DIR_ABS)
+
+    content = []
+    content.append('# Package overview')
+    content.append('')
+    content.append('This package contains the following modules:')
+    content.append('')
+
+    content.append('| Module | Summary |')
+    content.append('| --- | --- |')
+    for module, conf in sorted(modules.iteritems()):
+        col1 = '`%s`' % (module)
+        doc_file_name = conf.get('doc_file_name', None)
+        if doc_file_name:
+            col1 = '[%s](%s)' % (col1, doc_file_name)
+        summary = conf.get('summary', '_no summary available_')
+        content.append('| %s | %s |' % (col1, summary))
+
+    content.append('')
+
+    file_name = os.path.join(DOC_DIR_ABS, 'overview.md')
+    with open(file_name, 'wt') as f:
+        f.writelines('\n'.join(content))
+
+
 def render_doc(modules):
     if not os.path.isdir(DOC_DIR_ABS):
         os.makedirs(DOC_DIR_ABS)
@@ -477,9 +504,12 @@ def render_doc(modules):
         content.append('</table>')
         content.append('')
 
-        file_name = os.path.join(DOC_DIR_ABS, module) + '.md'
+        conf['doc_file_name'] = module + '.md'
+        file_name = os.path.join(DOC_DIR_ABS, conf['doc_file_name'])
         with open(file_name, 'wt') as f:
             f.writelines('\n'.join(content))
+
+    render_package_overview(modules)
 
 
 PRETTY_SOURCE_URL_BASE, RAW_SOURCE_URL_BASE = get_url_bases()
