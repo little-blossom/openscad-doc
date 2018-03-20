@@ -505,6 +505,9 @@ def render_doc(modules):
         content.append('</table>')
         content.append('')
 
+        content.append(linksLine)
+        content.append('')
+
         conf['doc_file_name'] = module + '.md'
         file_name = os.path.join(DOC_DIR_ABS, conf['doc_file_name'])
         with open(file_name, 'wt') as f:
