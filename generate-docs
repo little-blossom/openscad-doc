@@ -433,6 +433,12 @@ def render_package_overview(modules):
     content = []
     content.append('# Package overview')
     content.append('')
+
+    linksLine = 'Links:'
+    linksLine += ' ([documentation home](../index.md))'
+    content.append(linksLine)
+    content.append('')
+
     content.append('This package contains the following modules:')
     content.append('')
 
