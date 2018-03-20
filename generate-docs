@@ -461,16 +461,15 @@ def render_doc(modules):
         content.append('# %s' % (module))
         content.append('')
 
-        if PRETTY_SOURCE_URL_BASE or RAW_SOURCE_URL_BASE:
-            sources = 'Source:'
-            if PRETTY_SOURCE_URL_BASE:
-                pretty_source_url = PRETTY_SOURCE_URL_BASE % (conf['source'])
-                sources += ' [%s](%s)' % (conf['source'], pretty_source_url)
-            if RAW_SOURCE_URL_BASE:
-                raw_source_url = RAW_SOURCE_URL_BASE % (conf['source'])
-                sources += ' ([raw](%s))' % (raw_source_url)
-            content.append(sources)
-            content.append('')
+        linksLine = 'Links:'
+        if PRETTY_SOURCE_URL_BASE:
+            pretty_source_url = PRETTY_SOURCE_URL_BASE % (conf['source'])
+            linksLine += ' ([source](%s))' % (pretty_source_url)
+        if RAW_SOURCE_URL_BASE:
+            raw_source_url = RAW_SOURCE_URL_BASE % (conf['source'])
+            linksLine += ' ([raw source](%s))' % (raw_source_url)
+        content.append(linksLine)
+        content.append('')
 
         if conf['summary']:
             content.append(conf['summary'])
