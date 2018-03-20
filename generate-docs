@@ -469,6 +469,7 @@ def render_doc(modules):
             raw_source_url = RAW_SOURCE_URL_BASE % (conf['source'])
             linksLine += ' ([raw source](%s))' % (raw_source_url)
         linksLine += ' ([package overview](overview.md))'
+        linksLine += ' ([documentation home](../index.md))'
         content.append(linksLine)
         content.append('')
 
