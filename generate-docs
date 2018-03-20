@@ -237,12 +237,18 @@ def parse_openscad(examples, lines, file_number, file_name, module_name,
         'png_markup': png_markup,
         'caption_text_markup': caption_text_markup,
         'caption_markup': caption_markup,
+        'source_lines': source_lines,
         }
     return file_id
 
 
-def render_example(conf):
-    markup = '| %s |\n| :---: |\n|' % (conf['png_markup'])
+def render_example(conf, show_source=False):
+    markup = ''
+    if show_source:
+        markup += '\n```openscad\n'
+        markup += '\n'.join(conf['source_lines'])
+        markup += '\n```\n'
+    markup += '| %s |\n| :---: |\n|' % (conf['png_markup'])
     markup += conf['caption_markup']
     markup += '|\n'
     return markup
@@ -547,7 +553,7 @@ def render_doc(modules):
                 caption_text_markup = example_conf['caption_text_markup']
                 content.append('### %s' % (caption_text_markup))
                 content.append('')
-                content.append(render_example(example_conf))
+                content.append(render_example(example_conf, show_source=True))
                 content.append('')
 
         content.append(linksLine)
