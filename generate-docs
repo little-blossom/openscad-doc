@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import re
 import shutil
 from ConfigParser import SafeConfigParser, NoOptionError, NoSectionError
 
@@ -56,7 +57,10 @@ def remove_files_from_last_run():
 def add_module(modules, file_name, name, args, doc):
     if name.startswith("test"):
         return
-    summary, description, doc_args = parse_doc(doc, file_name, name)
+
+    doc_file_name = name + '.md'
+    summary, description, doc_args, examples = parse_doc(doc, file_name, name,
+                                                         doc_file_name)
 
     for doc_arg in doc_args.keys():
         if doc_arg not in [arg['name'] for arg in args]:
@@ -70,10 +74,12 @@ def add_module(modules, file_name, name, args, doc):
         arg['description'] = doc_args[arg['name']]
 
     modules[name] = {
+        'doc_file_name': doc_file_name,
         'source': file_name,
         'summary': summary,
         'description': description,
         'args': args,
+        'examples': examples,
         }
 
 
@@ -177,13 +183,14 @@ def parse_openscad_open_tag(line, file_number):
     return file_id, caption, alt
 
 
-def parse_openscad(lines, file_number, file_name, module_name):
+def parse_openscad(examples, lines, file_number, file_name, module_name,
+                   doc_file_name):
     while len(lines) >= 3 and not lines[0].strip().endswith('>'):
         lines = [lines[0] + ' ' + lines[1]] + lines[2:]
 
     file_id, caption, alt = parse_openscad_open_tag(lines[0], file_number)
 
-    media_dir_rel_doc = os.path.join(file_name + '-media')
+    media_dir_rel_doc = os.path.join(doc_file_name + '-media')
     media_dir_abs = os.path.join(DOC_DIR_ABS, media_dir_rel_doc)
 
     scad_file_rel_doc = os.path.join(media_dir_rel_doc, file_id + '.scad')
@@ -195,48 +202,57 @@ def parse_openscad(lines, file_number, file_name, module_name):
     if not os.path.isdir(media_dir_abs):
         os.makedirs(media_dir_abs)
 
+    source_lines = lines[1:-1]
     with open(scad_file_abs, 'wt') as f:
-        f.writelines('\n'.join(lines[1:-1]))
+        f.writelines('\n'.join(source_lines))
 
     render_openscad(scad_file_abs, png_file_abs, file_name, module_name)
 
-    markup = '![%s](%s "%s")' % (file_id, png_file_rel_doc, alt)
+    png_markup = '![%s](%s "%s")' % (file_id, png_file_rel_doc, alt)
     if PRETTY_SOURCE_URL_BASE:
         url = PRETTY_SOURCE_URL_BASE % os.path.join(
             DOC_DIR_REL, png_file_rel_doc)
-        markup = '[%s](%s)' % (markup, url)
+        png_markup = '[%s](%s)' % (png_markup, url)
 
-    markup = '| %s |\n| :---: |\n|' % (markup)
-
-    markup += 'Example %d' % (file_number)
+    caption_text_markup = 'Example %d' % (file_number)
     if caption:
-        markup += ': %s' % (caption)
-    markup += ' '
+        caption_text_markup += ': %s' % (caption)
 
+    caption_markup = caption_text_markup + ' '
     if PRETTY_SOURCE_URL_BASE:
         pretty_url = PRETTY_SOURCE_URL_BASE % os.path.join(
             DOC_DIR_REL, scad_file_rel_doc)
     else:
         pretty_url = scad_file_rel_doc
-    markup += '[(source)](%s)' % (pretty_url)
+    caption_markup += '[(source)](%s)' % (pretty_url)
 
     if RAW_SOURCE_URL_BASE:
         raw_url = RAW_SOURCE_URL_BASE % os.path.join(
             DOC_DIR_REL, scad_file_rel_doc)
     else:
         raw_url = scad_file_rel_doc
-    markup += '[(raw)](%s)' % (raw_url)
+    caption_markup += '[(raw)](%s)' % (raw_url)
 
+    examples[file_id] = {
+        'png_markup': png_markup,
+        'caption_text_markup': caption_text_markup,
+        'caption_markup': caption_markup,
+        }
+    return file_id
+
+
+def render_example(conf):
+    markup = '| %s |\n| :---: |\n|' % (conf['png_markup'])
+    markup += conf['caption_markup']
     markup += '|\n'
-
     return markup
 
 
-def parse_doc(doc_lines, file_name, module_name):
+def parse_doc(doc_lines, file_name, module_name, doc_file_name):
     summary = None
     description = ''
     parameters = {}
-    openscad_count = 0
+    examples = {}
 
     foundBlockTags = False
     if doc_lines:
@@ -267,9 +283,11 @@ def parse_doc(doc_lines, file_name, module_name):
                                                   module_name)
                 elif kind == 'openscad':
                     if paragraph[-1].strip() == '</openscad>':
-                        openscad_count += 1
-                        markup = parse_openscad(paragraph, openscad_count,
-                                                file_name, module_name)
+                        openscad_count = len(examples) + 1
+                        example_id = parse_openscad(
+                            examples, paragraph, openscad_count, file_name,
+                            module_name, doc_file_name)
+                        markup = render_example(examples[example_id])
                         description += '\n%s\n' % (markup)
                     else:
                         paragraph.append('')
@@ -316,7 +334,7 @@ def parse_doc(doc_lines, file_name, module_name):
                     msg = 'Unknown paragraph kind \'%s\'' % (kind)
                     doc_warning(msg, file_name, module_name)
 
-    return summary, description, parameters
+    return summary, description, parameters, examples
 
 
 def parse_arg_unparsed(arg_unparsed):
@@ -463,6 +481,8 @@ def render_doc(modules):
     if not os.path.isdir(DOC_DIR_ABS):
         os.makedirs(DOC_DIR_ABS)
     for module, conf in modules.iteritems():
+        sorted_examples = sorted(conf['examples'].iteritems(),
+                                 key=lambda x: x[1]['caption_text_markup'])
         content = []
         content.append('# %s' % (module))
         content.append('')
@@ -486,6 +506,8 @@ def render_doc(modules):
         if conf['description']:
             content.append('* [Description](#description)')
         content.append('* [Arguments](#arguments)')
+        if conf['examples']:
+            content.append('* [Examples](#examples)')
         content.append('')
 
         if conf['description']:
@@ -511,10 +533,26 @@ def render_doc(modules):
         content.append('</table>')
         content.append('')
 
+        if sorted_examples:
+            content.append('## Examples')
+            content.append('')
+
+            for example_id, example_conf in sorted_examples:
+                caption = example_conf['caption_text_markup']
+                anchor = re.sub('[\':]', '', re.sub(' ', '-', caption.lower()))
+                content.append('* [%s](#%s)' % (caption, anchor))
+            content.append('')
+
+            for example_id, example_conf in sorted_examples:
+                caption_text_markup = example_conf['caption_text_markup']
+                content.append('### %s' % (caption_text_markup))
+                content.append('')
+                content.append(render_example(example_conf))
+                content.append('')
+
         content.append(linksLine)
         content.append('')
 
-        conf['doc_file_name'] = module + '.md'
         file_name = os.path.join(DOC_DIR_ABS, conf['doc_file_name'])
         with open(file_name, 'wt') as f:
             f.writelines('\n'.join(content))
