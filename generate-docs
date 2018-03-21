@@ -488,6 +488,11 @@ def render_package_overview(modules):
         f.writelines('\n'.join(content))
 
 
+def text_to_anchor(text):
+    anchor = re.sub('[\':]', '', re.sub(' ', '-', text.lower()))
+    return anchor
+
+
 def render_doc(modules):
     if not os.path.isdir(DOC_DIR_ABS):
         os.makedirs(DOC_DIR_ABS)
@@ -519,6 +524,10 @@ def render_doc(modules):
         content.append('* [Arguments](#arguments)')
         if conf['examples']:
             content.append('* [Examples](#examples)')
+            for example_id, example_conf in sorted_examples:
+                caption = example_conf['caption_text_markup']
+                anchor = text_to_anchor(caption)
+                content.append('  * [%s](#%s)' % (caption, anchor))
         content.append('')
 
         if conf['description']:
@@ -550,7 +559,7 @@ def render_doc(modules):
 
             for example_id, example_conf in sorted_examples:
                 caption = example_conf['caption_text_markup']
-                anchor = re.sub('[\':]', '', re.sub(' ', '-', caption.lower()))
+                anchor = text_to_anchor(caption)
                 content.append('* [%s](#%s)' % (caption, anchor))
             content.append('')
 
