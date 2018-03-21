@@ -208,7 +208,25 @@ def parse_openscad(examples, lines, file_number, file_name, module_name,
     with open(scad_file_abs, 'wt') as f:
         f.writelines('\n'.join(source_lines))
 
-    render_openscad(scad_file_abs, png_file_abs, file_name, module_name)
+    # Since some OpenSCAD builds (at least the OpenSCAD build for Travis) pick
+    # up `use`s differently, from Mint's OpenSCAD, and paths get confused, we
+    # translate paths to absolute paths in the snippets. That way, they render
+    # properly locally and on Travis. We do that in a tmp file and not in the
+    # real file, as otherwise the produced .scad file would differ when
+    # running in two different places and would hence give us diffs.
+    scad_tmp_file_abs = scad_file_abs + '.tmp'
+    cwd = os.getcwd()
+    translated_source_lines = [re.sub(
+            r'^((use) <)([^/])',
+            r'\1%s/\3' % (cwd), line) for line in source_lines]
+    with open(scad_tmp_file_abs, 'wt') as f:
+        f.writelines('\n'.join(translated_source_lines))
+
+    try:
+        render_openscad(scad_tmp_file_abs, png_file_abs, file_name,
+                        module_name)
+    finally:
+        os.remove(scad_tmp_file_abs)
 
     png_markup = '![%s](%s "%s")' % (file_id, png_file_rel_doc, alt)
     if PRETTY_SOURCE_URL_BASE:
