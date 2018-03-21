@@ -179,8 +179,9 @@ def parse_openscad_open_tag(line, file_number):
     file_id = attributes.get('id', 'openscad-%d' % (file_number))
     caption = attributes.get('caption', None)
     alt = attributes.get('alt', file_id)
+    visible = attributes.get('visible', 'true') == 'true'
 
-    return file_id, caption, alt
+    return file_id, caption, alt, visible
 
 
 def parse_openscad(examples, lines, file_number, file_name, module_name,
@@ -188,7 +189,8 @@ def parse_openscad(examples, lines, file_number, file_name, module_name,
     while len(lines) >= 3 and not lines[0].strip().endswith('>'):
         lines = [lines[0] + ' ' + lines[1]] + lines[2:]
 
-    file_id, caption, alt = parse_openscad_open_tag(lines[0], file_number)
+    file_id, caption, alt, visible = parse_openscad_open_tag(
+        lines[0], file_number)
 
     media_dir_rel_doc = os.path.join(doc_file_name + '-media')
     media_dir_abs = os.path.join(DOC_DIR_ABS, media_dir_rel_doc)
@@ -233,13 +235,15 @@ def parse_openscad(examples, lines, file_number, file_name, module_name,
         raw_url = scad_file_rel_doc
     caption_markup += '[(raw)](%s)' % (raw_url)
 
-    examples[file_id] = {
+    conf = {
         'png_markup': png_markup,
         'caption_text_markup': caption_text_markup,
         'caption_markup': caption_markup,
         'source_lines': source_lines,
+        'visible': visible,
         }
-    return file_id
+    examples[file_id] = conf
+    return file_id, conf
 
 
 def render_example(conf, show_source=False):
@@ -290,11 +294,12 @@ def parse_doc(doc_lines, file_name, module_name, doc_file_name):
                 elif kind == 'openscad':
                     if paragraph[-1].strip() == '</openscad>':
                         openscad_count = len(examples) + 1
-                        example_id = parse_openscad(
+                        example_id, example_conf = parse_openscad(
                             examples, paragraph, openscad_count, file_name,
                             module_name, doc_file_name)
-                        markup = render_example(examples[example_id])
-                        description += '\n%s\n' % (markup)
+                        if example_conf['visible']:
+                            markup = render_example(examples[example_id])
+                            description += '\n%s\n' % (markup)
                     else:
                         paragraph.append('')
                         resetKind = False
